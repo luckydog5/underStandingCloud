@@ -3,6 +3,7 @@ import pandas as pd
 import cv2
 import matplotlib.pyplot as plt 
 import albumentations as albu 
+import keras
 from sklearn.model_selection import train_test_split
 def np_resize(img,input_shape,graystyle=False):
     """
@@ -146,7 +147,8 @@ class DataGenerator(keras.utils.Sequence):
         # Generate data
         for i,ID in enumerate(list_IDs_batch):
             im_name = self.df['ImageId'].iloc[ID]
-            img_path = f"{self.base_path}/im_name"
+            #img_path = f"{self.base_path}/im_name"
+            img_path = self.base_path + '/' + im_name
             img = cv2.imread(img_path)
             img = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
             img = img.astype(np.float32)/255.
@@ -167,7 +169,7 @@ class DataGenerator(keras.utils.Sequence):
             image_df = self.target_df[self.target_df['ImageId']== im_name]
             rles = image_df['EncodedPixels'].values
             if self.reshape is not None:
-                masks = build_masks(rels,input_shape=self.dim,reshape=self.reshape)
+                masks = build_masks(rles,input_shape=self.dim,reshape=self.reshape)
             else:
                 masks = build_masks(rles,input_shape=self.dim)
             y[i,] = masks
@@ -205,7 +207,7 @@ class DataGenerator(keras.utils.Sequence):
 
 
 
-def gen(csv):
+def gen(csv,verbose=False):
     train_df,mask_count_df = read_data(csv,verbose)
     train_ohe_df = one_hot_encoding(train_df)
     img_to_ohe_vector = {img: vec for img, vec in zip(train_ohe_df['ImageId'], train_ohe_df.iloc[:, 2:].values)}
