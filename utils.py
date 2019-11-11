@@ -3,7 +3,23 @@ import pandas as pd
 import cv2
 import matplotlib.pyplot as plt 
 import albumentations as albu 
+#import keras 
 from sklearn.model_selection import train_test_split
+
+class Config(object):
+    batch_size = 32
+    backbone = 'resnet34'
+    encoding_weights = 'imagenet'
+    activation = 'sigmoid'
+    epochs = 30
+    learning_rate = 3e-4
+    height = 320
+    width = 480
+    channels = 3
+    es_patience = 5
+    rlrop_patience = 3
+    decay_drop = 0.5
+    n_classes = 4 
 def np_resize(img,input_shape,graystyle=False):
     """
     Reshape a numpy array, which is input_shape=(height,width),
@@ -79,12 +95,14 @@ def read_data(csv,verbose=False):
     print(train_df.shape)
     print(train_df.head())
     #####
+    """
     if verbose:
         image = base_path + train_df['ImageId'][0]
         img = cv2.imread(image)
         img = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
         plt.imshow(img)
         plt.show()
+    """
     return train_df,mask_count_df
 
 def one_hot_encoding(train_df=None):
@@ -95,7 +113,8 @@ def one_hot_encoding(train_df=None):
         train_ohe_df[class_name] = train_ohe_df['Label'].map(lambda x: 1 if class_name in x else 0)
     return train_ohe_df   
 
-class DataGenerator(keras.utils.Sequence):
+#class DataGenerator(keras.utils.Sequence):
+class DataGenerator():
     def __init__(self,list_IDs,df,target_df=None,mode='fit',base_path='data/train_images',batch_size=32,dim=(1400,2100),n_channels=3,reshape=None,augment=False,n_classes=4,random_state=42,shuffle=True,graystyle=False):
         self.dim = dim
         self.batch_size = batch_size
@@ -146,7 +165,8 @@ class DataGenerator(keras.utils.Sequence):
         # Generate data
         for i,ID in enumerate(list_IDs_batch):
             im_name = self.df['ImageId'].iloc[ID]
-            img_path = f"{self.base_path}/im_name"
+            #img_path = f"{self.base_path}/im_name"
+            img_path = self.base_path + '/' + im_name
             img = cv2.imread(img_path)
             img = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
             img = img.astype(np.float32)/255.
@@ -167,7 +187,7 @@ class DataGenerator(keras.utils.Sequence):
             image_df = self.target_df[self.target_df['ImageId']== im_name]
             rles = image_df['EncodedPixels'].values
             if self.reshape is not None:
-                masks = build_masks(rels,input_shape=self.dim,reshape=self.reshape)
+                masks = build_masks(rles,input_shape=self.dim,reshape=self.reshape)
             else:
                 masks = build_masks(rles,input_shape=self.dim)
             y[i,] = masks
@@ -212,15 +232,109 @@ def gen(csv):
     train_ohe_df['Label'].map(lambda x: str(sorted(list(x))))
     train_idx,val_idx = train_test_split(mask_count_df.index,random_state=42,stratify=train_ohe_df['Label'].map(lambda x: str(sorted(list(x)))),test_size=0.2)
     return train_idx,mask_count_df,train_df,val_idx
+def post_process(probability,threshold,min_size):
+    """
+    Post processing of each predicted mask, components with lesser
+    number of pixels than 'min_size' are ignored
+
+    """
+    rects = []
+    mask = cv2.threshold(probability,threshold,1,cv2.THRESH_BINARY)[1]
+    num_component,component = cv2.connectedComponents(mask.astype(np.uint8))
+    predictions = np.zeros((350,525),np.float32)
+    num = 0
+    for c in range(1,num_component):
+        p = (component == c)
+        print("p.sum(): {}".format(p.sum()))
+        if p.sum() > min_size:
+            predictions[p] = 1
+            num += 1
+    if num > 0:
+        mask_p = predictions.copy()
+        contours,hierarchy = cv2.findContours(mask_p.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+        cnts = sorted(contours,key=cv2.contourArea,reverse=True)[:num]
+        for c in cnts:
+            x,y,w,h = cv2.boundingRect(c)
+            rects.append((x,y,w,h))
+            print('rect {}'.format((x,y,w,h)))
+    return predictions,num,rects
+def sigmoid(x):
+    return 1/(1+np.exp(-x))
 if __name__ == '__main__':
     csv = 'data/train.csv'
+    config = Config()
     verbose = True
     train_df,mask_count_df = read_data(csv,verbose)
     train_ohe_df = one_hot_encoding(train_df)
     img_to_ohe_vector = {img: vec for img, vec in zip(train_ohe_df['ImageId'], train_ohe_df.iloc[:, 2:].values)}
     train_ohe_df['Label'].map(lambda x: str(sorted(list(x))))
     train_idx,val_idx = train_test_split(mask_count_df.index,random_state=42,stratify=train_ohe_df['Label'].map(lambda x: str(sorted(list(x)))),test_size=0.2)
+    train_generator = DataGenerator(train_idx, 
+                                df=mask_count_df, 
+                                target_df=train_df, 
+                                batch_size=config.batch_size,
+                                reshape=(config.height,config.width),
+                                augment=True,
+                                graystyle=False,
+                                shuffle = True,
+                                n_channels=config.channels,
+                                n_classes=config.n_classes)
+    
     if verbose:
         print('train_ohe_df head: {}'.format(train_ohe_df.head()))
         print('train length: {}'.format(len(train_idx)))
         print('val length: {}'.format(len(val_idx)))
+        print("train_generator lengh is ", len(train_generator))
+        x,y = train_generator.__getitem__(0)
+        im_x = x[2]
+        mask_x = y[2]
+        print(x.shape,y.shape)
+        print(mask_x[:,:,0].shape)
+        rectts = []
+        color_list = [(0,0,255),(0,255,0),(255,0,0),(255,100,200)]
+        class_list = ['Fish','Flower','Gravel','Surger']
+        print("y.shape[-1] : {}".format(y.shape[-1]))
+        print('y[0][:,:,1] type is {}, its {}'.format(type(y[0][:,:,1]),y[0][:,:,1]))
+        if im_x.shape != (350,525):
+            xx = cv2.resize(im_x,dsize=(525,350),interpolation=cv2.INTER_LINEAR)
+        for k in range(y.shape[-1]):
+            print('--k is : {} --'.format(k))
+            print("type y[0] is {}".format(type(mask_x)))
+            temp = mask_x[...,k].copy()
+            #pred_mask = y[0][:,:,k].astype('float32')
+            pred_mask = temp.astype(np.float32)
+            if pred_mask.shape != (350,525):
+                pred_mask = cv2.resize(pred_mask,dsize=(525,350),interpolation=cv2.INTER_LINEAR)
+            print('pred_mask shape {}'.format(pred_mask.shape))
+            #predd_mask,num_predict,rects = post_process(sigmoid(pred_mask),0.5,25000)
+            predd_mask,num_predict,rects = post_process(pred_mask,0.5,0)
+            print('num_predict is {}'.format(num_predict))
+            print('rects {}'.format(len(rects)))
+            if len(rects) > 0:
+                for rect in rects:
+                    x1,yy,w,h = rect 
+                    print('x,y,w,h {}'.format(rect))
+                    print('color_list k is {}'.format(color_list[k]))
+                    cv2.rectangle(xx,(x1,yy),(x1+w,yy+h),color_list[k],1)
+                    cv2.putText(xx,class_list[k],(x1,yy),cv2.FONT_HERSHEY_SIMPLEX, 1.0, color_list[k], lineType=cv2.LINE_AA)
+            else:
+                continue
+        plt.figure(figsize=(20,8),dpi=80)
+        plt.imshow(xx)
+        
+        
+        plt.figure(figsize=(20,8),dpi=80)    
+        plt.subplot(231)
+        plt.imshow(im_x)
+        plt.subplot(232)
+        plt.imshow(mask_x[:,:,0])
+        plt.subplot(233)
+        plt.imshow(mask_x[:,:,1])
+        plt.subplot(234)
+        plt.imshow(mask_x[:,:,2])
+        plt.subplot(235)
+        plt.imshow(mask_x[:,:,3])
+        plt.subplot(236)
+        plt.imshow(mask_x)
+        plt.show()
+        

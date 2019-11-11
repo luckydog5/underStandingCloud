@@ -143,7 +143,7 @@ def train(inputs,data):
     optimizer = Adam(lr=config.learning_rate)
     model.compile(optimizer=optimizer,loss=bce_dice_loss,metrics=metric_list)
     checkpoint.set_model(model)
-    history = model.fit_generator(train_generator,validation_data=val_generator,callbacks=callback_list,epochs=100,initial_epoch=0,verbose=2)
+    model.fit_generator(train_generator,validation_data=val_generator,callbacks=callback_list,epochs=100,initial_epoch=0)
 if __name__ == '__main__':
     csv = 'data/train.csv'
     train_idx,mask_count_df,train_df,val_idx = gen(csv)
