@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt 
 import glob 
 import argparse
+import cv2 
 from keras.preprocessing.image import array_to_img, img_to_array,load_img
 
 """Predict outoput shape is (320,480,4). 4 is classes(Fish,Flower,Gravel,Surger)"""
@@ -15,6 +16,7 @@ def parse_arguments():
         help="Image path",
         default=""
     ) 
+    return parser.parse_args()
 def post_process(probability,threshold,min_size):
     """
     Post processing of each predicted mask, components with lesser
@@ -24,11 +26,12 @@ def post_process(probability,threshold,min_size):
     rects = []
     mask = cv2.threshold(probability,threshold,1,cv2.THRESH_BINARY)[1]
     num_component,component = cv2.connectedComponents(mask.astype(np.uint8))
-    predictions = np.zeros((350,525),np.float32)
+    #predictions = np.zeros((350,525),np.float32)
+    predictions = np.zeros((320,480),np.float32)
     num = 0
     for c in range(1,num_component):
         p = (component == c)
-        print("p.sum(): {}".format(p.sum()))
+        #print("p.sum(): {}".format(p.sum()))
         if p.sum() > min_size:
             predictions[p] = 1
             num += 1
@@ -47,12 +50,12 @@ def visualize(img,mask):
     for k in range(mask.shape[-1]):
         temp = mask[...,k]
         pred_mask = temp.astype(np.float32)
-        pred_mask,num_predict,rects = post_process(pred_mask,0.9,25000)
+        pred_mask,num_predict,rects = post_process(pred_mask,0.9,10000)
         if len(rects) > 0:
             for rect in rects:
                 x,y,w,h = rect 
                 cv2.rectangle(img,(x,y),(x+w,y+h),color_list[k],1)
-                cv2.putText(img,class_list[k],(x,y),cv2.FONT_HERSHEY_SIMPLEX, 1.0, color_list[k], lineType=cv2.LINE_AA)
+                cv2.putText(img,class_list[k],(x+20,y+20),cv2.FONT_HERSHEY_SIMPLEX, 0.5, color_list[k], lineType=cv2.LINE_AA)
         else:
             continue
     return img 
@@ -78,11 +81,12 @@ if __name__ == '__main__':
 
     x = img_to_array(image)
     x /= 255 
+    img = x 
     x = np.expand_dims(x,axis=0)
     pred = mm.predict(x)[0]
     print('x shape: {}'.format(x[0].shape))
     print('pred.shape: {}'.format(pred.shape))
-  
+    img = visualize(img,pred)
     Fish = pred[:,:,0]
     Flower = pred[:,:,1]
     Gravel = pred[:,:,2]
@@ -99,5 +103,6 @@ if __name__ == '__main__':
         plt.imshow(Gravel)
         plt.subplot(235)
         plt.imshow(Sugar)
-        
+        plt.figure(figsize=(20,8),dpi=80)
+        plt.imshow(img)
         plt.show()
