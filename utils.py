@@ -3,7 +3,7 @@ import pandas as pd
 import cv2
 import matplotlib.pyplot as plt 
 import albumentations as albu 
-#import keras 
+import keras
 from sklearn.model_selection import train_test_split
 
 class Config(object):
@@ -225,7 +225,7 @@ class DataGenerator():
 
 
 
-def gen(csv):
+def gen(csv,verbose=False):
     train_df,mask_count_df = read_data(csv,verbose)
     train_ohe_df = one_hot_encoding(train_df)
     img_to_ohe_vector = {img: vec for img, vec in zip(train_ohe_df['ImageId'], train_ohe_df.iloc[:, 2:].values)}

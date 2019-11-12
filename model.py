@@ -1,3 +1,4 @@
+import keras
 from keras import backend as K 
 from keras.layers import Input
 from keras.layers.convolutional import Conv2D,Conv2DTranspose
@@ -16,7 +17,7 @@ class Config(object):
     backbone = 'resnet34'
     encoding_weights = 'imagenet'
     activation = 'sigmoid'
-    epochs = 30
+    epochs = 100
     learning_rate = 3e-4
     height = 320
     width = 480
@@ -146,5 +147,13 @@ def train(inputs,data):
     model.fit_generator(train_generator,validation_data=val_generator,callbacks=callback_list,epochs=100,initial_epoch=0)
 if __name__ == '__main__':
     csv = 'data/train.csv'
-    train_idx,mask_count_df,train_df,val_idx = gen(csv)
+    train_idx,mask_count_df,train_df,val_idx = gen(csv,False)
     data = (train_idx,mask_count_df,train_df,val_idx)
+    model = unet((320,480,3))
+    
+    train((320,480,3),data)
+
+
+      
+
+      
