@@ -4,8 +4,14 @@ import cv2
 import matplotlib.pyplot as plt 
 import albumentations as albu 
 import keras
+import random 
+import colorsys
+from matplotlib import patches,lines
+from matplotlib.patches import Polygon
 from sklearn.model_selection import train_test_split
-
+from sklearn.measure import find_contours
+from keras.models import Model 
+from model import unet
 class Config(object):
     batch_size = 32
     backbone = 'resnet34'
@@ -260,6 +266,102 @@ def post_process(probability,threshold,min_size):
     return predictions,num,rects
 def sigmoid(x):
     return 1/(1+np.exp(-x))
+
+def extract_layer_output(model,layer_name,x):
+    """
+    model: load pretrained weights and specify inputs shape
+    layer_name: which layer output will you use
+    x: image to extract features from
+    return: numpy.array(N,H,W,C)
+    """
+    intermediate_model = Model(inputs=model.input,outputs=model.get_layer(layer_name).output)
+    intermediate_output = intermediate_model.predict(x)
+    return intermediate_output 
+def apply_mask(image,mask,color,alpha=0.5):
+    """Apply the given mask to the image.
+    """
+    for c in range(3):
+        image[:,:,c] = np.where(mask==1,image[:,:,c]*(1-alpha)+alpha*color[c]*255,image[:,:,c])
+    return image 
+def random_colors(N,bright=True):
+    """
+    Generate random colors.
+    To get visually distinct colors, generate them in HSV space
+    then convert to RGB.
+    """
+    brightness = 1.0 if bright else 0.7
+    hsv = [(i/N,1,brightness)for i in range(N)]
+    colors = list(map(lambda c: clolorsys.hsv_to_rgb(*c),hsv))
+    random.shuffle(colors)
+    return colors
+def display_instances(N,image,boxes,masks,class_ids,class_names,scores=None,title="",figsize=(20,8),ax=None,show_mask=True,show_bbox=True,colors=None,captions=None):
+    """
+    N: Number of instances
+    boxes: [num_instance,(y1,x1,y2,x2,class_id)] in image coordinates.
+    masks: [height,width,num_instances]
+    class_ids: [num_instances]
+    class_names: list of class names of the dataset 
+    scores: (optional) confidence scores for each box 
+    title: (optional) Figure title
+    show_mask, show_bbox: To show masks and bounding boxes or not
+    figsize: (optional) the size of the image
+    colors: (optional) An array or colors to use with each object
+    captions: (optional) A list of strings to use as captions for each object
+    """
+    auto_show = False
+    if not ax:
+        _,ax = plt.subplots(1,figsize=figsize)
+        auto_show = True 
+    # Generate random colors
+    colors = colors or random_colors(N)
+    # Show area outside image boundaries.
+    height,width = image.shape[:2]
+    ax.set_ylim(height + 10, -10)
+    ax.set_xlim(-10,width + 10)
+    ax.axis('off')
+    ax.set_title(title)
+
+    masked_image = image.astype(np.uint32).copy()
+    for i in range(N):
+        color = colors[i]
+        # Bounding box 
+        x1,y1,x2,y2 = boxes[i]
+        if show_bbox:
+            p = patches.Rectangle((x1,y1),x2-x1,y2-y1,linewidth=2,alpha=0.7,linestyle="dashed",edgecolor=color,facecolor='none')
+            ax.add_patch(p)
+        # Label 
+        if not captions:
+            class_id = class_ids[i]
+            score = scores[i] if scores is not None else None
+            label = class_names[class_id]
+            caption = "{} {:.3f}".format(label,score) if score else label
+        else:
+            caption = captions[i]
+        ax.text(x1,y1+8,caption,color='w',size=11,backgroundcolor="none")
+
+        # Mask 
+        mask = masks[:,:,i]
+        if show_mask:
+            masked_image = apply_mask(masked_image,mask,color)
+        
+        # Mask Polygon
+        # Pad to ensure proper polygons for masks that touch image edges.
+        padded_mask = np.zeros((mask.shape[0] + 2,mask.shape[1]+2),dtype=np.uint8)
+        padded_mask [1:-1,1:-1] = mask 
+        contours = find_contours(padded_mask,0.5)
+        for verts in contours:
+            # Subtract the padding and flip (y,x) to (x,y)
+            verts = np.fliplr(verts) -1
+            p = Polygon(verts,facecolor="none",edgecolor=color)
+            ax.add_patch(p)
+    ax.imshow(masked_image.astype(np.uint8))
+    if auto_show:
+        plt.show()
+
+
+
+
+
 if __name__ == '__main__':
     csv = 'data/train.csv'
     config = Config()
