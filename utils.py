@@ -9,9 +9,9 @@ import colorsys
 from matplotlib import patches,lines
 from matplotlib.patches import Polygon
 from sklearn.model_selection import train_test_split
-from sklearn.measure import find_contours
+from skimage.measure import find_contours
 from keras.models import Model 
-from model import unet
+#from model import unet
 class Config(object):
     batch_size = 32
     backbone = 'resnet34'

@@ -95,8 +95,10 @@ def display_instances(image,boxes,masks,class_ids,class_names,scores=None,title=
             ax.add_patch(p)
     #cc = plt.imshow(image)
     #ax.add_patch(cc)
-    ax.imshow(masked_image.astype(np.uint8))
-    ax.imshow(image)
+    masked_image = cv2.addWeighted(image,0.9,masked_image.astype(np.float32),0.1,0)
+    ax.imshow(masked_image)
+    #ax.imshow(masked_image.astype(np.uint8))
+    #ax.imshow(image)
     ############ Try something different...
     """
     _,ay = plt.subplots(1,figsize=figsize)
@@ -106,10 +108,12 @@ def display_instances(image,boxes,masks,class_ids,class_names,scores=None,title=
     ay.set_title(title)
     ay.imshow(image)
     """
-    plt.savefig('result.jpg',dpi=200)
-    if auto_show:
-        plt.show()
-
+    ## For streamlist.. marked plt.imshow()
+    #plt.savefig('result.jpg',dpi=200)
+    
+    #if auto_show:
+        #plt.show()
+    return masked_image
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Some parameters.')
     parser.add_argument(
@@ -156,7 +160,9 @@ def post_process(probability,threshold,min_size):
             num += 1
     if num > 0:
         mask_p = predictions.copy()
-        _,contours,hierarchy = cv2.findContours(mask_p.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+        # cv.__version__ < 4.0
+        #_,contours,hierarchy = cv2.findContours(mask_p.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+        contours,hierarchy = cv2.findContours(mask_p.astype(np.uint8),cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
         cnts = sorted(contours,key=cv2.contourArea,reverse=True)[:num]
         for c in cnts:
             x,y,w,h = cv2.boundingRect(c)
@@ -215,7 +221,7 @@ if __name__ == '__main__':
         display_instances(img,boxes,masks,class_ids,class_names)
     #################################################
     
-    img = visualize(img,pred)
+    #img = visualize(img,pred)
     Fish = pred[:,:,0]
     Flower = pred[:,:,1]
     Gravel = pred[:,:,2]
